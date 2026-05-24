@@ -1,0 +1,14 @@
+vault_password_file: "/home/torsten/.config/loki/vault_password"
+vaultPasswordFile: "/home/torsten/.config/loki/vault_password"
+
+model: ollama:gemma4:e4b
+clients:
+  - type: openai-compatible
+    name: ollama
+    api_base: http://127.0.0.1:11434/v1
+    models:
+      - name: gemma4:e4b
+      - name: gemma4:latest
+      - name: llama3.2:latest
+
+mcp_server_support: true
