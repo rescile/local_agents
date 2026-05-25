@@ -6,12 +6,11 @@
     utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, utils, ... }:
+  outputs = { self, nixpkgs, utils }:
     utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        
-        # Nutzt direkt den nativen rustPlatform Compiler deines aktuellen NixOS-Stands
+
         local-loki = pkgs.rustPlatform.buildRustPackage rec {
           pname = "loki-ai";
           version = "0.4.0";
@@ -32,6 +31,26 @@
           '';
           doCheck = false;
         };
+        
+        mcpConfig = pkgs.writeText "mcp.json" (builtins.toJSON {
+          mcpServers = {
+            rescile-automation = {
+              type = "http"; # Oder "sse", je nachdem was wir herausfinden
+              url = "http://127.0.0.1:7600/mcp";
+            };
+          };
+        });
+
+        lokiConfig = pkgs.writeText "config.yaml" ''
+          vault_password_file: "/home/torsten/.loki_password"
+          model: ollama:llama3.2
+          clients:
+            - type: openai-compatible
+              name: ollama
+              api_base: http://127.0.0.1:11434/v1
+              models:
+                - name: llama3.2
+        '';
       in
       {
         devShells.default = pkgs.mkShell {
@@ -43,8 +62,15 @@
           ];
 
           shellHook = ''
-            echo "⚡ Nativer Loki-Workspace geladen (Rust ${pkgs.rustc.version}) ⚡"
+            LOKI_CONFIG_DIR="$HOME/.config/loki"
+            mkdir -p "$LOKI_CONFIG_DIR/functions"
+
+            cp -f ${mcpConfig} "$LOKI_CONFIG_DIR/functions/mcp.json"
+            cp -f ${lokiConfig} "$LOKI_CONFIG_DIR/config.yaml"
+
+            echo "--- Loki environment successfully initialized (Rust ${pkgs.rustc.version}) ---"
           '';
         };
-      });
+      }
+    );
 }
