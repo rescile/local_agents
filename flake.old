@@ -1,5 +1,5 @@
 {
-  description = "Localized Agentic Infrastructure - Loki & Ollama Workspace";
+  description = "Localized Agentic Infrastructure & Loki Workspace";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -31,11 +31,11 @@
           '';
           doCheck = false;
         };
-
+        
         mcpConfig = pkgs.writeText "mcp.json" (builtins.toJSON {
           mcpServers = {
             rescile-automation = {
-              type = "http"; 
+              type = "http"; # Oder "sse", je nachdem was wir herausfinden
               url = "http://127.0.0.1:7600/mcp";
             };
           };
@@ -51,56 +51,32 @@
               models:
                 - name: gemma4
                 - name: llama3.2
-
-          mcp_server_support: true
-          enabled_mcp_servers: "rescile-automation"
+          
+          # ---- MCP Servers ----
+          # See the [MCP Servers documentation](https://github.com/Dark-Alex-17/loki/wiki/MCP-Servers) for more details
+          mcp_server_support: true         # Enables or disables MCP servers (globally).
+          mapping_mcp_servers:             # Alias for an MCP server or set of servers
+            git: github,gitmcp
+          enabled_mcp_servers: github      # Which MCP servers to enable by default (e.g. 'github,slack,ddg-search')
         '';
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            local-loki
-            ollama          
-            clinfo          
-            intel-compute-runtime 
             netcat
             curl
             python3
-            nixfmt
-            nil
+            local-loki
           ];
 
           shellHook = ''
-            # Pfade für Loki vorbereiten
             LOKI_CONFIG_DIR="$HOME/.config/loki"
             mkdir -p "$LOKI_CONFIG_DIR/functions"
 
             cp -f ${mcpConfig} "$LOKI_CONFIG_DIR/functions/mcp.json"
             cp -f ${lokiConfig} "$LOKI_CONFIG_DIR/config.yaml"
 
-            # --- Lokales Ollama Server Management ---
-            export OLLAMA_MODELS="$PWD/.ollama/models"
-            export OLLAMA_HOST="127.0.0.1:11434"
-            export OLLAMA_INTEL_GPU=1
-            export OLLAMA_NUM_PARALLEL=2
-
-            mkdir -p "$OLLAMA_MODELS"
-
-            # Prüfen, ob bereits ein Ollama-Server auf dem Port läuft
-            if ! nc -z 127.0.0.1 11434 2>/dev/null; then
-              echo "-> Starting localized Ollama background daemon with Intel GPU acceleration..."
-              
-              # Wir starten Ollama entkoppelt mit nohup, damit das Beenden der Subshell 
-              # den Prozess nicht mitreißt. Wir verzichten auf den destruktiven Trap.
-              nohup ollama serve > .ollama_server.log 2>&1 &
-              
-              # Kurz warten, bis der Socket aktiv ist
-              sleep 1500ms
-            else
-              echo "-> Ollama daemon already running on port 11434."
-            fi
-
-            echo "--- Localized AI Workspace Ready (Loki 0.4.0 & Ollama Server) ---"
+            echo "--- Loki environment successfully initialized (Rust ${pkgs.rustc.version}) ---"
           '';
         };
       }
