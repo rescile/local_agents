@@ -8,8 +8,16 @@
 
   outputs = { self, nixpkgs, utils }:
     utils.lib.eachDefaultSystem (system:
+
       let
         pkgs = import nixpkgs { inherit system; };
+
+        # Ein echtes, portables Script-Paket für den Ollama-Start
+        start-ollama = pkgs.writeScriptBin "start-ollama" ''
+          #!${pkgs.bash}/bin/bash
+          echo "-> Starting localized Ollama server..."
+          exec ollama serve
+        '';
 
         local-loki = pkgs.rustPlatform.buildRustPackage rec {
           pname = "loki-ai";
@@ -57,16 +65,17 @@
         '';
       in
       {
-        devShells.default = pkgs.mkShell {
+      devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             local-loki
+            start-ollama    # <--- Hier das neue Script einfügen!
             ollama          
             clinfo          
             intel-compute-runtime 
             netcat
             curl
             python3
-            nixfmt
+            nixfmt          # <--- Direkt auf das neue saubere Paket geändert
             nil
           ];
 
@@ -78,7 +87,7 @@
             cp -f ${mcpConfig} "$LOKI_CONFIG_DIR/functions/mcp.json"
             cp -f ${lokiConfig} "$LOKI_CONFIG_DIR/config.yaml"
 
-            # --- Lokales Ollama Server Management ---
+            # --- Lokale Ollama Umgebungsvariablen ---
             export OLLAMA_MODELS="$PWD/.ollama/models"
             export OLLAMA_HOST="127.0.0.1:11434"
             export OLLAMA_INTEL_GPU=1
@@ -86,21 +95,8 @@
 
             mkdir -p "$OLLAMA_MODELS"
 
-            # Prüfen, ob bereits ein Ollama-Server auf dem Port läuft
-            if ! nc -z 127.0.0.1 11434 2>/dev/null; then
-              echo "-> Starting localized Ollama background daemon with Intel GPU acceleration..."
-              
-              # Wir starten Ollama entkoppelt mit nohup, damit das Beenden der Subshell 
-              # den Prozess nicht mitreißt. Wir verzichten auf den destruktiven Trap.
-              nohup ollama serve > .ollama_server.log 2>&1 &
-              
-              # Kurz warten, bis der Socket aktiv ist
-              sleep 1500ms
-            else
-              echo "-> Ollama daemon already running on port 11434."
-            fi
-
-            echo "--- Localized AI Workspace Ready (Loki 0.4.0 & Ollama Server) ---"
+            echo "--- Localized AI Workspace Ready (Loki 0.4.0) ---"
+            echo "-> Run 'start-ollama' in a separate terminal to boot the local model server."
           '';
         };
       }

@@ -222,3 +222,7 @@ __marimo__/
 
 # loki
 .config
+
+# Local Ollama Storage (Enthält die GB-großen Modell-Dateien)
+.ollama/
+.ollama_server.log
