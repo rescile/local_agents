@@ -51,13 +51,14 @@
 
         lokiConfig = pkgs.writeText "config.yaml" ''
           vault_password_file: "/home/torsten/.loki_password"
-          model: ollama:gemma4
+          model: ollama:qwen2.5-coder:7b
           clients:
             - type: openai-compatible
               name: ollama
               api_base: http://127.0.0.1:11434/v1
               models:
-                - name: gemma4
+                - name: qwen2.5-coder:7b
+                - name: gemma4:E4B
                 - name: llama3.2
 
           mcp_server_support: true
