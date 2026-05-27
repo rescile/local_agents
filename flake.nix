@@ -16,7 +16,11 @@
       system:
 
       let
-        pkgs = import nixpkgs { inherit system; };
+        # Allow unfree packages so Intel's OneAPI/SYCL toolkit can compile
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
 
         # Ein echtes, portables Script-Paket für den Ollama-Start
         start-ollama = pkgs.writeScriptBin "start-ollama" ''
@@ -58,40 +62,58 @@
               rescile-automation = {
                 type = "http";
                 url = "http://127.0.0.1:7600/mcp";
+                # Explicitly pass the headers your server demands to pass validation
+                headers = {
+                  "Accept" = "text/event-stream";
+                };
               };
             };
           }
         );
 
-        lokiConfig = pkgs.writeText "config.yaml" ''
-          vault_password_file: "/home/torsten/.loki_password"
-          model: qwen2.5-coder:7b
-          clients:
-            - type: ollama                    # <-- Changed from openai-compatible
-              name: ollama
-              api_base: http://127.0.0.1:11434 # <-- Point directly to native base port
-              models:
-                - name: qwen2.5-coder:7b
-                - name: gemma4:E4B
-                - name: llama3.2
+        # Wrap the configuration in a writeText & builtins.toJSON block
+        lokiConfigFile = pkgs.writeText "config.yaml" (
+          builtins.toJSON {
+            vault_password_file = "/home/torsten/.loki_password";
+            model = "ollama:qwen2.5-coder:7b";
 
-          mcp_server_support: true
-          enabled_mcp_servers: "rescile-automation"
-        '';
+            # ADDED: Explicitly set a stable temperature and streaming defaults
+            temperature = 0.2;
+            stream = true;
+
+            clients = [
+              {
+                type = "openai-compatible";
+                name = "ollama";
+                api_base = "http://127.0.0.1:11434/v1";
+                models = [
+                  {
+                    name = "qwen2.5-coder:7b";
+                    type = "chat";
+                    supports_tools = true;
+                  }
+                  { name = "gemma4:E4B"; }
+                  { name = "llama3.2"; }
+                ];
+              }
+            ];
+            mcp_server_support = true;
+            enabled_mcp_servers = "rescile-automation";
+          }
+        );
+
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             local-loki
             start-ollama
-
-            # Use vulkan instead of sycl to bypass the nixpkgs assertion check
-            (ollama.override { acceleration = "vulkan"; })
-
+            ollama
             clinfo
-            vulkan-tools # Useful to verify vulkan properties if needed
+            vulkan-tools
             intel-compute-runtime
             intel-media-driver
+            ocl-icd # Added for SYCL runtime support
             netcat
             curl
             python3
@@ -100,15 +122,28 @@
           ];
 
           shellHook = ''
-            # ... Keep your existing Loki config copy rules here ...
+            # Pfade für Loki vorbereiten
+            LOKI_CONFIG_DIR="$HOME/.config/loki"
+            mkdir -p "$LOKI_CONFIG_DIR/functions"
 
-            # --- Lokale Ollama Umgebungsvariablen ---
+            # Copy mcp.json to BOTH possible locations to ensure Loki detects it
+            cp -f ${mcpConfig} "$LOKI_CONFIG_DIR/mcp.json"
+            cp -f ${mcpConfig} "$LOKI_CONFIG_DIR/functions/mcp.json"
+
+            cp -f ${lokiConfigFile} "$LOKI_CONFIG_DIR/config.yaml"
+
+            # --- Force clean terminal encoding output ---
+            export LANG="en_US.UTF-8"
+            export LC_ALL="en_US.UTF-8"
+
             export OLLAMA_MODELS="$PWD/.ollama/models"
             export OLLAMA_HOST="127.0.0.1:11434"
             export OLLAMA_NUM_PARALLEL=2
 
-            # --- Point the execution layers directly to your graphics runtimes ---
-            export LD_LIBRARY_PATH="${pkgs.intel-compute-runtime}/lib:${pkgs.intel-media-driver}/lib:$LD_LIBRARY_PATH"
+
+            # --- Point OpenCL to your Intel Compute vendor directory ---
+            export OCL_ICD_VENDORS="${pkgs.intel-compute-runtime}/etc/OpenCL/vendors/"
+            export LD_LIBRARY_PATH="${pkgs.intel-compute-runtime}/lib:${pkgs.intel-media-driver}/lib:${pkgs.ocl-icd}/lib:$LD_LIBRARY_PATH"
 
             mkdir -p "$OLLAMA_MODELS"
 
